@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Terran Planet — Demo</title>
+  <style>
+    html,body{height:100%;margin:0;background:#030417;color:#dfe7ff;font-family:system-ui,Segoe UI,Roboto,Arial}
+    #view{display:block;width:100vw;height:100vh}
+    #hint{position:fixed;left:12px;top:12px;background:rgba(8,10,20,.55);padding:8px 10px;border-radius:8px}
+  </style>
+</head>
+<body>
+  <div id="hint">LPM + przeciągnij: obrót · Scroll: zoom</div>
+  <canvas id="view"></canvas>
+
+  <script type="module">
+    import * as THREE from "https://unpkg.com/three@0.160.1/build/three.module.js";
+    import { OrbitControls } from "https://unpkg.com/three@0.160.1/examples/jsm/controls/OrbitControls.js";
+    import { createTerranPlanet } from "./TerranPlanet.js";
+
+    const canvas = document.getElementById("view");
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    const scene = new THREE.Scene(); scene.background = new THREE.Color(0x05061a);
+
+    const camera = new THREE.PerspectiveCamera(45, 2, 0.1, 1000);
+    camera.position.set(0,0.8,2.6);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+
+    scene.add(new THREE.AmbientLight(0x223344, 0.6));
+    const sun = new THREE.DirectionalLight(0xffffff, 1.0);
+    sun.position.set(3,1.5,1); scene.add(sun);
+
+    const terran = createTerranPlanet({ radius: 1.0, waterLevel: 0.08, continentScale: 3.2, seed: 137.0 });
+    scene.add(terran.group);
+    terran.setSunDirection(sun.position.clone().normalize());
+
+    function resize(){
+      const w = canvas.clientWidth, h = canvas.clientHeight;
+      if (canvas.width !== w || canvas.height !== h){
+        renderer.setSize(w, h, false);
+        camera.aspect = w/h; camera.updateProjectionMatrix();
+      }
+    }
+
+    let t0 = performance.now();
+    function loop(now){
+      const t = (now - t0) / 1000;
+      resize();
+      terran.group.rotation.y = t*0.1;
+      terran.update(t);
+      controls.update();
+      renderer.render(scene, camera);
+      requestAnimationFrame(loop);
+    }
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>

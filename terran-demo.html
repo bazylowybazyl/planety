@@ -15,48 +15,112 @@
   <canvas id="view"></canvas>
 
   <script type="module">
-    import * as THREE from "https://unpkg.com/three@0.160.1/build/three.module.js";
-    import { OrbitControls } from "https://unpkg.com/three@0.160.1/examples/jsm/controls/OrbitControls.js";
-    import { createTerranPlanet } from "./TerranPlanet.js";
+  import * as THREE from "https://unpkg.com/three@0.160.1/build/three.module.js";
+  import { OrbitControls } from "https://unpkg.com/three@0.160.1/examples/jsm/controls/OrbitControls.js";
 
-    const canvas = document.getElementById("view");
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
-    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-    const scene = new THREE.Scene(); scene.background = new THREE.Color(0x05061a);
+  // === 1) Minimal debug: sfera bazowa
+  function addDebugSphere(scene) {
+    const geo = new THREE.SphereGeometry(1, 64, 32);
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0x3aa0ff,
+      roughness: 0.6,
+      metalness: 0.0,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.name = "DEBUG_SPHERE";
+    scene.add(mesh);
 
-    const camera = new THREE.PerspectiveCamera(45, 2, 0.1, 1000);
-    camera.position.set(0,0.8,2.6);
+    // Obrys druciany — żeby było widać bryłę nawet przy problemie z materiałem
+    const wire = new THREE.Mesh(
+      new THREE.SphereGeometry(1.002, 32, 16),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.15 })
+    );
+    wire.name = "DEBUG_WIREFRAME";
+    scene.add(wire);
+  }
 
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
+  // === 2) Shader Terra (identyczny jak wcześniej — skrócony tu do importu)
+  // Dla zwięzłości: wklej dokładnie swoją definicję createTerranPlanet() z TerranPlanet.js
+  // (jeśli plik masz już w repo, możesz go importować zamiast inline):
+  import { createTerranPlanet } from "./TerranPlanet.js";
 
-    scene.add(new THREE.AmbientLight(0x223344, 0.6));
-    const sun = new THREE.DirectionalLight(0xffffff, 1.0);
-    sun.position.set(3,1.5,1); scene.add(sun);
+  // ==== Setup renderer/scene/camera/controls
+  const canvas = document.getElementById("view");
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: "high-performance" });
+  renderer.setClearColor(0x05061a, 1);
+  renderer.debug.checkShaderErrors = true;      // << kluczowe: pokaże błędy shaderów w konsoli
 
-    const terran = createTerranPlanet({ radius: 1.0, waterLevel: 0.08, continentScale: 3.2, seed: 137.0 });
-    scene.add(terran.group);
-    terran.setSunDirection(sun.position.clone().normalize());
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(45, 2, 0.1, 1000);
+  camera.position.set(0, 0.8, 2.6);
 
-    function resize(){
-      const w = canvas.clientWidth, h = canvas.clientHeight;
-      if (canvas.width !== w || canvas.height !== h){
-        renderer.setSize(w, h, false);
-        camera.aspect = w/h; camera.updateProjectionMatrix();
-      }
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.target.set(0, 0, 0);
+
+  // Światła
+  scene.add(new THREE.AmbientLight(0x223344, 0.7));
+  const sun = new THREE.DirectionalLight(0xffffff, 1.2);
+  sun.position.set(3, 1.5, 1);
+  scene.add(sun);
+
+  // Helpery (oś + mały punkt słońca, czysto debugowo)
+  scene.add(new THREE.AxesHelper(1.5));
+  const sunDot = new THREE.Mesh(
+    new THREE.SphereGeometry(0.03, 16, 8),
+    new THREE.MeshBasicMaterial({ color: 0xffe9a6 })
+  );
+  sunDot.position.copy(sun.position).normalize().multiplyScalar(2.2);
+  scene.add(sunDot);
+
+  // 3) Dodajemy debugową sferę — jeżeli ją widzisz, kamera/render działa
+  addDebugSphere(scene);
+
+  // 4) Dodajemy Terrę na wierzch (lekko większa niż debug, żeby ją przykryła)
+  const terran = createTerranPlanet({
+    radius: 1.01,
+    waterLevel: 0.08,
+    continentScale: 3.2,
+    seed: 137.0
+  });
+  scene.add(terran.group);
+  terran.setSunDirection(sun.position.clone().normalize());
+
+  // Rozmiar / DPR
+  function resize() {
+    const w = canvas.clientWidth || window.innerWidth;
+    const h = canvas.clientHeight || window.innerHeight;
+    const needResize = canvas.width !== w || canvas.height !== h;
+    if (needResize) {
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
     }
+  }
 
-    let t0 = performance.now();
-    function loop(now){
-      const t = (now - t0) / 1000;
-      resize();
-      terran.group.rotation.y = t*0.1;
-      terran.update(t);
-      controls.update();
-      renderer.render(scene, camera);
-      requestAnimationFrame(loop);
-    }
+  // Animacja
+  let t0 = performance.now();
+  function loop(now) {
+    const t = (now - t0) / 1000;
+    resize();
+
+    // delikatna rotacja planety
+    terran.group.rotation.y = t * 0.1;
+    terran.update(t);
+
+    controls.update();
+    renderer.render(scene, camera);
     requestAnimationFrame(loop);
-  </script>
+  }
+  requestAnimationFrame(loop);
+
+  // Log diagnostyczny — od razu w konsoli zobaczysz, czy materiał się zlinkował
+  renderer.info.autoReset = false;
+  setTimeout(() => {
+    console.log("Renderer caps:", renderer.capabilities);
+    console.log("DrawCalls (po 1s):", renderer.info.render.calls);
+  }, 1000);
+</script>
 </body>
 </html>
